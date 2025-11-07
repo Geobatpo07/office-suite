@@ -1,0 +1,67 @@
+{
+  "name": "Office Suite Dev Environment",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+    "source=${localWorkspaceFolder}/.env,target=/workspace/.env,type=bind",
+    "source=${localWorkspaceFolder}/docker-compose.yml,target=/workspace/docker-compose.yml,type=bind"
+  ],
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    },
+    "ghcr.io/devcontainers/features/azure-cli:1": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-azuretools.vscode-docker",
+        "ms-python.python",
+        "ms-toolsai.jupyter",
+        "esbenp.prettier-vscode",
+        "redhat.vscode-yaml",
+        "formulahendry.docker-explorer",
+        "eamodio.gitlens",
+        "bierner.markdown-preview-github-styles"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "files.autoSave": "onFocusChange",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    },
+    "jetbrains": {
+      "backend": "IntelliJ",
+      "plugins": [
+        "Docker",
+        "DatabaseTools",
+        "Markdown",
+        "GitToolBox"
+      ]
+    }
+  },
+
+  "postStartCommand": "docker compose --env-file .env up -d traefik nextcloud nextcloud-db onlyoffice hedgedoc hedgedoc-db keycloak",
+
+  "remoteUser": "ubuntu",
+
+  "runServices": [],
+  "service": "none",
+
+  "containerEnv": {
+    "DOCKER_BUILDKIT": "1",
+    "COMPOSE_DOCKER_CLI_BUILD": "1",
+    "SSL_MODE": "enabled"
+  }
+}
