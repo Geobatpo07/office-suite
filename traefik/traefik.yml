@@ -27,11 +27,3 @@ providers:
 api:
   dashboard: true
 
-certificatesResolvers:
-  localcert:
-    acme:
-      caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
-      email: admin@localhost
-      storage: /letsencrypt/acme.json
-      httpChallenge:
-        entryPoint: web

@@ -1,5 +1,6 @@
 # ===========================================
 # Docker Compose pour Office Suite Dev Local
+# Ports adaptés pour Windows / IIS
 # ===========================================
 
 services:
@@ -13,13 +14,13 @@ services:
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.address=:8081"
+      - "--entrypoints.websecure.address=:8443"
       - "--api.dashboard=true"
     ports:
-      - "8081:80"   # HTTP
-      - "8443:443"  # HTTPS
-      - "8089:8080" # Traefik dashboard
+      - "8081:8081"   # HTTP Traefik
+      - "8443:8443"   # HTTPS Traefik
+      - "8089:8080"   # Dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml
@@ -116,9 +117,9 @@ services:
       CMD_OAUTH2_PROVIDERNAME: Keycloak
       CMD_OAUTH2_CLIENT_ID: hedgedoc-client
       CMD_OAUTH2_CLIENT_SECRET: hedgedoc_secret
-      CMD_OAUTH2_AUTHORIZATION_URL: https://auth.localhost/realms/master/protocol/openid-connect/auth
-      CMD_OAUTH2_TOKEN_URL: https://auth.localhost/realms/master/protocol/openid-connect/token
-      CMD_OAUTH2_USER_PROFILE_URL: https://auth.localhost/realms/master/protocol/openid-connect/userinfo
+      CMD_OAUTH2_AUTHORIZATION_URL: https://auth.localhost:8443/realms/master/protocol/openid-connect/auth
+      CMD_OAUTH2_TOKEN_URL: https://auth.localhost:8443/realms/master/protocol/openid-connect/token
+      CMD_OAUTH2_USER_PROFILE_URL: https://auth.localhost:8443/realms/master/protocol/openid-connect/userinfo
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.hedgedoc.rule=Host(`notes.localhost`)"
