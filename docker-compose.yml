@@ -17,9 +17,9 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--api.dashboard=true"
     ports:
-      - "80:80"
-      - "443:443"
-      - "8089:8080"  # Dashboard Traefik
+      - "8081:80"   # HTTP
+      - "8443:443"  # HTTPS
+      - "8089:8080" # Traefik dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml
