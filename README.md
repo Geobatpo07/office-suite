@@ -1,43 +1,43 @@
-# Office Suite Dev Environment
+### Office Suite Dev Environment
 
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
 [![Traefik](https://img.shields.io/badge/traefik-v3.0-orange.svg)](https://traefik.io/)
 [![SSL](https://img.shields.io/badge/SSL-mkcert-green.svg)](https://github.com/FiloSottile/mkcert)
 
-Une suite bureautique locale complète pour le développement et les tests, utilisant **Nextcloud**, **OnlyOffice**, **HedgeDoc**, et **Keycloak** avec un reverse proxy **Traefik** et des certificats SSL locaux via **mkcert**.
+A complete local office suite for development and testing, using **Nextcloud**, **OnlyOffice**, **HedgeDoc**, and **Keycloak** behind a **Traefik** reverse proxy with local SSL certificates via **mkcert**.
 
 ---
 
-## Services inclus
+### Included Services
 
-- **Traefik** : reverse proxy HTTPS avec dashboard  
-- **Nextcloud** : stockage et collaboration cloud  
-- **OnlyOffice** : édition de documents en ligne  
-- **HedgeDoc** : prise de notes collaborative  
-- **Keycloak** : gestion de l’authentification et OAuth2  
-- **PostgreSQL** : base de données pour Nextcloud et HedgeDoc  
+- **Traefik**: HTTPS reverse proxy with dashboard  
+- **Nextcloud**: cloud storage and collaboration  
+- **OnlyOffice**: online document editing  
+- **HedgeDoc**: collaborative note-taking  
+- **Keycloak**: authentication and OAuth2 management  
+- **PostgreSQL**: database for Nextcloud and HedgeDoc  
 
 ---
 
-## Prérequis
+### Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop) (Windows)  
 - [Docker Compose v2+](https://docs.docker.com/compose/install/)  
-- [Chocolatey](https://chocolatey.org/) (optionnel pour mkcert)  
-- [mkcert](https://github.com/FiloSottile/mkcert) pour SSL local  
+- [Chocolatey](https://chocolatey.org/) (optional for mkcert)  
+- [mkcert](https://github.com/FiloSottile/mkcert) for local SSL  
 
 ---
 
-## Installation
+### Installation
 
-### 1. Cloner le projet
+#### 1. Clone the project
 
 ```bash
 git clone https://github.com/<username>/office-suite.git
 cd office-suite
 ```
 
-### 2. Installer mkcert et générer les certificats
+#### 2. Install mkcert and generate certificates
 
 ```powershell
 choco install mkcert
@@ -45,11 +45,11 @@ mkcert -install
 mkcert nextcloud.localhost office.localhost notes.localhost auth.localhost
 ```
 
-Les certificats seront placés dans `./traefik/certs`.
+Certificates will be placed in `./traefik/certs`.
 
-### 3. Configurer le fichier `.env`
+#### 3. Configure the `.env` file
 
-Crée un fichier `.env` à la racine :
+Create a `.env` file at the project root:
 
 ```env
 NETWORK_NAME=office_net
@@ -68,9 +68,9 @@ KEYCLOAK_USER=admin
 KEYCLOAK_PASSWORD=changeme
 ```
 
-### 4. Modifier le fichier hosts (Windows)
+#### 4. Edit the hosts file (Windows)
 
-Ajouter les entrées :
+Add these entries:
 
 ```text
 127.0.0.1 nextcloud.localhost
@@ -79,7 +79,7 @@ Ajouter les entrées :
 127.0.0.1 auth.localhost
 ```
 
-**Astuce CMD admin** :
+Admin CMD tip:
 
 ```cmd
 echo 127.0.0.1 nextcloud.localhost >> C:\Windows\System32\drivers\etc\hosts
@@ -90,30 +90,30 @@ echo 127.0.0.1 auth.localhost >> C:\Windows\System32\drivers\etc\hosts
 
 ---
 
-## Lancer la suite
+### Start the suite
 
 ```bash
 docker compose --env-file .env up -d
 ```
 
-- Traefik : `https://localhost:8089`  
-- Nextcloud : `https://nextcloud.localhost`  
-- OnlyOffice : `https://office.localhost`  
-- HedgeDoc : `https://notes.localhost`  
-- Keycloak : `https://auth.localhost`  
+- Traefik: `https://localhost:8089`  
+- Nextcloud: `https://nextcloud.localhost`  
+- OnlyOffice: `https://office.localhost`  
+- HedgeDoc: `https://notes.localhost`  
+- Keycloak: `https://auth.localhost`  
 
 ---
 
-## Utilisation
+### Usage
 
-- Tous les services communiquent via le réseau Docker `office_net`.  
-- Nextcloud et HedgeDoc utilisent PostgreSQL pour la persistance des données.  
-- OnlyOffice nécessite `JWT_SECRET` pour l’authentification interne.  
-- Traefik gère le HTTPS avec les certificats mkcert.  
+- All services communicate via the Docker network `office_net`.  
+- Nextcloud and HedgeDoc use PostgreSQL for data persistence.  
+- OnlyOffice requires `JWT_SECRET` for internal authentication.  
+- Traefik handles HTTPS using mkcert certificates.  
 
 ---
 
-## Arrêter et nettoyer
+### Stop and clean up
 
 ```bash
 docker compose --env-file .env down -v
@@ -121,15 +121,15 @@ docker compose --env-file .env down -v
 
 ---
 
-## Structure du projet
+### Project structure
 
 ```
 office-suite/
 │
-├─ .devcontainer/        # Configuration VS Code / JetBrains
+├─ .devcontainer/        # VS Code / JetBrains configuration
 ├─ traefik/
-│   ├─ traefik.yml       # Configuration Traefik
-│   └─ certs/            # Certificats mkcert
+│   ├─ traefik.yml       # Traefik configuration
+│   └─ certs/            # mkcert certificates
 ├─ docker-compose.yml
 ├─ .env
 └─ README.md
@@ -137,20 +137,19 @@ office-suite/
 
 ---
 
-## Sécurité
+### Security
 
-- Les certificats mkcert sont **locaux** et ne doivent pas être utilisés en production.  
-- Pour un déploiement public, configure Traefik avec Let's Encrypt officiel.  
+- mkcert certificates are **local** and must not be used in production.  
+- For a public deployment, configure Traefik with official Let’s Encrypt.  
 
 ---
 
-## Licence
+### License
 
 MIT License
 
 ---
 
-## Auteurs
+### Authors
 
-Geovany Batista Polo LAGUERRE | Data Scientist 
-
+Geovany Batista Polo LAGUERRE | Data Scientist
