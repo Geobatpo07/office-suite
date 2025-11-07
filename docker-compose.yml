@@ -1,0 +1,161 @@
+# ===========================================
+# Docker Compose pour Office Suite Dev Local
+# ===========================================
+
+services:
+  # ================================
+  # Traefik HTTPS Reverse Proxy
+  # ================================
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: always
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--api.dashboard=true"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8089:8080"  # Dashboard Traefik
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml
+      - ./traefik/certs:/certs
+    networks:
+      - office_net
+
+  # ================================
+  # PostgreSQL for Nextcloud
+  # ================================
+  nextcloud-db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: ${NEXTCLOUD_DB_USER}
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
+    volumes:
+      - nextcloud_db_data:/var/lib/postgresql/data
+    networks:
+      - office_net
+
+  # ================================
+  # Nextcloud
+  # ================================
+  nextcloud:
+    image: nextcloud:29-apache
+    restart: always
+    depends_on:
+      - nextcloud-db
+    environment:
+      POSTGRES_HOST: nextcloud-db
+      POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
+      POSTGRES_USER: ${NEXTCLOUD_DB_USER}
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      NEXTCLOUD_TRUSTED_DOMAINS: nextcloud.localhost
+    volumes:
+      - nextcloud_data:/var/www/html
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.localhost`)"
+      - "traefik.http.routers.nextcloud.entrypoints=websecure"
+      - "traefik.http.routers.nextcloud.tls=true"
+    networks:
+      - office_net
+
+  # ================================
+  # OnlyOffice
+  # ================================
+  onlyoffice:
+    image: onlyoffice/documentserver
+    restart: always
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_HEADER=Authorization
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.office.rule=Host(`office.localhost`)"
+      - "traefik.http.routers.office.entrypoints=websecure"
+      - "traefik.http.routers.office.tls=true"
+    networks:
+      - office_net
+
+  # ================================
+  # PostgreSQL for HedgeDoc
+  # ================================
+  hedgedoc-db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: ${HEDGEDOC_DB_USER}
+      POSTGRES_PASSWORD: ${HEDGEDOC_DB_PASSWORD}
+      POSTGRES_DB: ${HEDGEDOC_DB_NAME}
+    volumes:
+      - hedgedoc_db_data:/var/lib/postgresql/data
+    networks:
+      - office_net
+
+  # ================================
+  # HedgeDoc
+  # ================================
+  hedgedoc:
+    image: quay.io/hedgedoc/hedgedoc:1.9.9
+    restart: always
+    depends_on:
+      - hedgedoc-db
+      - keycloak
+    environment:
+      CMD_DB_URL: postgres://${HEDGEDOC_DB_USER}:${HEDGEDOC_DB_PASSWORD}@hedgedoc-db:5432/${HEDGEDOC_DB_NAME}
+      CMD_DOMAIN: notes.localhost
+      CMD_PROTOCOL_USESSL: "true"
+      CMD_DEFAULT_PERMISSION: "freely"
+      CMD_OAUTH2_PROVIDERNAME: Keycloak
+      CMD_OAUTH2_CLIENT_ID: hedgedoc-client
+      CMD_OAUTH2_CLIENT_SECRET: hedgedoc_secret
+      CMD_OAUTH2_AUTHORIZATION_URL: https://auth.localhost/realms/master/protocol/openid-connect/auth
+      CMD_OAUTH2_TOKEN_URL: https://auth.localhost/realms/master/protocol/openid-connect/token
+      CMD_OAUTH2_USER_PROFILE_URL: https://auth.localhost/realms/master/protocol/openid-connect/userinfo
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hedgedoc.rule=Host(`notes.localhost`)"
+      - "traefik.http.routers.hedgedoc.entrypoints=websecure"
+      - "traefik.http.routers.hedgedoc.tls=true"
+    networks:
+      - office_net
+
+  # ================================
+  # Keycloak
+  # ================================
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    restart: always
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_USER}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_PASSWORD}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.keycloak.rule=Host(`auth.localhost`)"
+      - "traefik.http.routers.keycloak.entrypoints=websecure"
+      - "traefik.http.routers.keycloak.tls=true"
+    networks:
+      - office_net
+
+# ================================
+# Volumes
+# ================================
+volumes:
+  nextcloud_data:
+  nextcloud_db_data:
+  hedgedoc_db_data:
+
+# ================================
+# Network
+# ================================
+networks:
+  office_net:
+    driver: bridge
