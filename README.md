@@ -33,7 +33,7 @@ A complete local office suite for development and testing, using **Nextcloud**, 
 #### 1. Clone the project
 
 ```bash
-git clone https://github.com/<username>/office-suite.git
+git clone https://github.com/Geobatpo07/office-suite.git
 cd office-suite
 ```
 
