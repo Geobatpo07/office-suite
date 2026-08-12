@@ -18,6 +18,8 @@ tls:
       keyFile: /certs/auth.key
     - certFile: /certs/mail.crt
       keyFile: /certs/mail.key
+    - certFile: /certs/storage.crt
+      keyFile: /certs/storage.key
 
   stores:
     default:

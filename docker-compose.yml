@@ -67,6 +67,65 @@ services:
           memory: 512M
 
   # ================================
+  # Redis - caching + file locking for Nextcloud
+  # ================================
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks:
+      - office_net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+
+  # ================================
+  # MinIO - S3-compatible primary object storage for Nextcloud
+  # ================================
+  minio:
+    # L'image officielle minio/minio n'est plus publiee (depot GitHub
+    # archive, retrait de Docker Hub fin 2025). cgr.dev/chainguard/minio
+    # est l'alternative gratuite maintenue par une organisation - en
+    # contrepartie, seul le tag `latest` est disponible sans compte payant
+    # (pas d'historique de versions figees comme les autres images du
+    # stack) : `docker compose pull` peut donc ramener une version plus
+    # recente de MinIO sans avertissement prealable.
+    image: cgr.dev/chainguard/minio:latest
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.storage.rule=Host(`storage.localhost`)"
+      - "traefik.http.routers.storage.entrypoints=websecure"
+      - "traefik.http.routers.storage.tls=true"
+      # Route vers la console web (9001), pas l'API S3 (9000) : cette
+      # derniere n'est jamais appelee que depuis Nextcloud, en interne.
+      - "traefik.http.services.storage.loadbalancer.server.port=9001"
+    networks:
+      - office_net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+
+  # ================================
   # Nextcloud
   # ================================
   nextcloud:
@@ -87,6 +146,10 @@ services:
     depends_on:
       nextcloud-db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
     environment:
       POSTGRES_HOST: nextcloud-db
       POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
@@ -95,13 +158,32 @@ services:
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
       # Lus par nextcloud/hooks/post-installation/*.sh pour configurer
-      # automatiquement OnlyOffice et le SSO Keycloak au premier demarrage.
+      # automatiquement OnlyOffice, le SSO Keycloak et Redis au premier
+      # demarrage.
       JWT_SECRET: ${JWT_SECRET}
       # Doit correspondre au secret du client "nextcloud-client" defini
       # dans keycloak/realm-office.json (importe automatiquement).
       NEXTCLOUD_OIDC_SECRET: ${NEXTCLOUD_OIDC_SECRET}
       # Doit correspondre au --static-auth-secret du service coturn.
       TURN_SECRET: ${TURN_SECRET}
+      # Lu par nextcloud/hooks/post-installation/redis.sh.
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # Stockage primaire S3/MinIO : lues uniquement par l'installeur de
+      # Nextcloud (occ maintenance:install --autoconfig), au tout premier
+      # demarrage sur un volume vide - passer par ces variables plutot
+      # qu'un hook post-installation, car le stockage objet doit etre en
+      # place AVANT la creation du premier utilisateur (migrer un stockage
+      # local existant vers un stockage objet n'est pas une simple bascule
+      # de config, ce n'est pas supporte par ce projet).
+      OBJECTSTORE_S3_BUCKET: nextcloud
+      OBJECTSTORE_S3_HOST: minio
+      OBJECTSTORE_S3_PORT: "9000"
+      OBJECTSTORE_S3_USEPATH_STYLE: "true"
+      OBJECTSTORE_S3_SSL: "false"
+      OBJECTSTORE_S3_REGION: us-east-1
+      OBJECTSTORE_S3_KEY: ${MINIO_ROOT_USER}
+      OBJECTSTORE_S3_SECRET: ${MINIO_ROOT_PASSWORD}
+      OBJECTSTORE_S3_AUTOCREATE: "true"
       # Le port fait partie du domaine de confiance : sans lui,
       # Nextcloud repond "Access through untrusted domain".
       NEXTCLOUD_TRUSTED_DOMAINS: "nextcloud.localhost nextcloud.localhost:8443 localhost"
@@ -385,6 +467,8 @@ volumes:
   onlyoffice_log:
   onlyoffice_db:
   keycloak_data:
+  redis_data:
+  minio_data:
 
 # ================================
 # Network

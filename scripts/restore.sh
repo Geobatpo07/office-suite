@@ -23,7 +23,7 @@ if [ -z "$BACKUP_DIR" ] || [ ! -d "$BACKUP_DIR" ]; then
     exit 1
 fi
 
-for f in nextcloud-db.sql hedgedoc-db.sql nextcloud_data.tar.gz hedgedoc_uploads.tar.gz onlyoffice_data.tar.gz onlyoffice_db.tar.gz keycloak_data.tar.gz; do
+for f in nextcloud-db.sql hedgedoc-db.sql nextcloud_data.tar.gz minio_data.tar.gz hedgedoc_uploads.tar.gz onlyoffice_data.tar.gz onlyoffice_db.tar.gz keycloak_data.tar.gz; do
     if [ ! -f "$BACKUP_DIR/$f" ]; then
         echo "Missing $f in $BACKUP_DIR - not a valid backup produced by scripts/backup.sh." >&2
         exit 1
@@ -36,9 +36,9 @@ if [ ! -f .env ]; then
 fi
 
 if [ "$CONFIRM" != "--yes" ]; then
-    echo "This DESTROYS all current data (Nextcloud files, HedgeDoc notes/uploads,"
-    echo "OnlyOffice storage, Keycloak realms/users, both Postgres databases) and"
-    echo "replaces it with the contents of: $BACKUP_DIR"
+    echo "This DESTROYS all current data (Nextcloud config + MinIO-stored files,"
+    echo "HedgeDoc notes/uploads, OnlyOffice storage, Keycloak realms/users, both"
+    echo "Postgres databases) and replaces it with the contents of: $BACKUP_DIR"
     printf 'Type "yes" to continue: '
     read -r answer
     if [ "$answer" != "yes" ]; then
@@ -53,7 +53,7 @@ COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-office_suite}
 echo "==> Stopping the stack (volumes are kept)"
 docker compose --env-file .env down
 
-for vol in nextcloud_data hedgedoc_uploads onlyoffice_data onlyoffice_db keycloak_data; do
+for vol in nextcloud_data minio_data hedgedoc_uploads onlyoffice_data onlyoffice_db keycloak_data; do
     full="${COMPOSE_PROJECT_NAME}_${vol}"
     echo "==> Restoring volume $full"
     docker volume create "$full" >/dev/null

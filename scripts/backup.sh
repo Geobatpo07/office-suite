@@ -1,8 +1,11 @@
 #!/bin/sh
 # Full backup of the office suite: a logical (pg_dump) dump of both
 # Postgres databases, plus a tar of every volume that holds user data
-# (Nextcloud files, HedgeDoc uploads, OnlyOffice's own storage, Keycloak's
-# realm/user database). Everything lands in backups/<UTC timestamp>/.
+# (Nextcloud app/config, MinIO - Nextcloud's actual primary file storage
+# since files no longer live under nextcloud_data, HedgeDoc uploads,
+# OnlyOffice's own storage, Keycloak's realm/user database). Everything
+# lands in backups/<UTC timestamp>/. redis_data is deliberately skipped:
+# it's pure cache/lock state, safe to lose, and gets rebuilt on its own.
 #
 # pg_dump instead of a raw tar of the Postgres data directories: a plain
 # SQL dump is consistent (no risk of copying half-written pages from a
@@ -70,7 +73,7 @@ docker compose --env-file .env exec -T nextcloud \
     su -p www-data -s /bin/sh -c 'php /var/www/html/occ maintenance:mode --on'
 MAINTENANCE_ON=1
 
-for vol in nextcloud_data hedgedoc_uploads onlyoffice_data onlyoffice_db keycloak_data; do
+for vol in nextcloud_data minio_data hedgedoc_uploads onlyoffice_data onlyoffice_db keycloak_data; do
     full="${COMPOSE_PROJECT_NAME}_${vol}"
     echo "==> Archiving volume $full"
     docker run --rm \
