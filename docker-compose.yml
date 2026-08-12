@@ -212,6 +212,23 @@ services:
       - office_net
 
   # ================================
+  # Mailpit - Local SMTP catch-all for dev
+  # ================================
+  mailpit:
+    image: axllent/mailpit:v1.30.7
+    restart: unless-stopped
+    # Pas d'authentification/TLS SMTP : c'est un relais local jete, les
+    # emails ne quittent jamais le reseau docker (pas de vraie livraison).
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mailpit.rule=Host(`mail.localhost`)"
+      - "traefik.http.routers.mailpit.entrypoints=websecure"
+      - "traefik.http.routers.mailpit.tls=true"
+      - "traefik.http.services.mailpit.loadbalancer.server.port=8025"
+    networks:
+      - office_net
+
+  # ================================
   # Keycloak
   # ================================
   keycloak:
@@ -250,6 +267,23 @@ services:
       - "traefik.http.routers.keycloak.tls=true"
       # L'image expose 8080, 8443 et 9000 : label obligatoire.
       - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
+    networks:
+      - office_net
+
+  # ================================
+  # Keycloak SMTP config (one-shot)
+  # ================================
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:25.0
+    restart: "no"
+    depends_on:
+      - keycloak
+    entrypoint: ["/bin/sh", "/configure-smtp.sh"]
+    environment:
+      KEYCLOAK_USER: ${KEYCLOAK_USER}
+      KEYCLOAK_PASSWORD: ${KEYCLOAK_PASSWORD}
+    volumes:
+      - ./keycloak/configure-smtp.sh:/configure-smtp.sh:ro
     networks:
       - office_net
 

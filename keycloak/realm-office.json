@@ -1,6 +1,15 @@
 {
   "realm": "office",
   "enabled": true,
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "keycloak@office.localhost",
+    "fromDisplayName": "Keycloak",
+    "auth": "false",
+    "ssl": "false",
+    "starttls": "false"
+  },
   "clients": [
     {
       "clientId": "hedgedoc-client",

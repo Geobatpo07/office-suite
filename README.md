@@ -16,6 +16,7 @@ A complete local office suite for development and testing, using **Nextcloud**, 
 - **HedgeDoc**: collaborative note-taking, with OAuth2 login against Keycloak pre-configured out of the box
 - **OnlyOffice ↔ Nextcloud connector**: pre-wired on first boot — open and co-edit `.docx`/`.xlsx`/`.pptx` files directly from Nextcloud's Files app, no manual setup
 - **Keycloak**: authentication and OAuth2 management, as SSO for both HedgeDoc and Nextcloud out of the box
+- **Mailpit**: local SMTP catch-all — password resets, share notifications and Keycloak account emails are all pre-wired to land here instead of a real inbox
 - **PostgreSQL**: database for Nextcloud and HedgeDoc
 
 ---
@@ -49,6 +50,7 @@ mkcert -cert-file traefik/certs/nextcloud.crt -key-file traefik/certs/nextcloud.
 mkcert -cert-file traefik/certs/office.crt     -key-file traefik/certs/office.key     office.localhost
 mkcert -cert-file traefik/certs/notes.crt      -key-file traefik/certs/notes.key      notes.localhost
 mkcert -cert-file traefik/certs/auth.crt       -key-file traefik/certs/auth.key       auth.test
+mkcert -cert-file traefik/certs/mail.crt       -key-file traefik/certs/mail.key       mail.localhost
 ```
 
 Keycloak's own certificate covers `auth.test`, not `auth.localhost` like the other three — see the note in step 4.
@@ -62,6 +64,8 @@ docker run --rm -v "$PWD/traefik/certs:/certs" -v "$PWD/traefik/gen-certs.sh:/ge
 ```
 
 This creates a local CA plus one certificate per domain. To avoid a browser warning, import `traefik/certs/ca.crt` into your OS/browser's trusted root certificate store. Either way, `traefik/certs/` is gitignored (it contains private keys) — every clone must regenerate it.
+
+Traefik's dynamic config watcher doesn't reliably pick up a brand-new certificate file on its own (observed on Docker Desktop for Windows) — if you add a domain's cert after Traefik is already running, `docker compose restart traefik` to be sure.
 
 #### 3. Configure the `.env` file
 
@@ -106,6 +110,7 @@ docker compose --env-file .env up -d
 - OnlyOffice: `https://office.localhost:8443` — no standalone login; open a document from Nextcloud's Files app instead (click any `.docx`/`.xlsx`/`.pptx`, or "+ > Document/Spreadsheet/Presentation" to create one)
 - HedgeDoc: `https://notes.localhost:8443` — click "Sign in via Keycloak"
 - Keycloak: `https://auth.test:8443/admin/` — login with `KEYCLOAK_USER` / `KEYCLOAK_PASSWORD` from `.env`
+- Mailpit: `https://mail.localhost:8443` — every email Nextcloud or Keycloak sends (password resets, share notifications, account emails) shows up here instead of a real inbox
 
 #### Logging into HedgeDoc or Nextcloud via Keycloak
 
@@ -117,7 +122,8 @@ On first boot, Keycloak automatically imports [`keycloak/realm-office.json`](key
 
 - All services communicate via the Docker network `office_net`.
 - Nextcloud and HedgeDoc use PostgreSQL for data persistence; OnlyOffice and Keycloak have their own dedicated volumes.
-- The ONLYOFFICE connector app and Keycloak SSO (`nextcloud/hooks/post-installation/*.sh`) are installed and configured automatically the first time Nextcloud boots.
+- The ONLYOFFICE connector app, Keycloak SSO and SMTP (`nextcloud/hooks/post-installation/*.sh`) are installed and configured automatically the first time Nextcloud boots.
+- Keycloak's own SMTP settings are applied by the one-shot `keycloak-init` service: Keycloak's file-based realm import silently drops the `smtpServer` block for a brand-new realm (a known limitation — the fields parse fine, they just don't end up on the imported realm), so `keycloak/configure-smtp.sh` sets them via the admin REST API instead, right after Keycloak comes up.
 - Nextcloud trusts the local CA on every container start (see the custom `entrypoint:` on the `nextcloud` service) so its PHP/curl backend can call `https://auth.test:8443` for SSO without a certificate error.
 - Traefik terminates HTTPS using the certificates generated in step 2.
 
@@ -140,11 +146,13 @@ office-suite/
 │
 ├─ .devcontainer/          # VS Code / JetBrains configuration
 ├─ keycloak/
-│   └─ realm-office.json   # Auto-imported realm: hedgedoc-client + demo user
+│   ├─ realm-office.json   # Auto-imported realm: hedgedoc-client, nextcloud-client, demo user
+│   └─ configure-smtp.sh   # One-shot: sets the realm's SMTP config via the admin API
 ├─ nextcloud/
 │   └─ hooks/post-installation/
 │       ├─ onlyoffice.sh     # Auto-installs & configures the ONLYOFFICE connector app
-│       └─ keycloak-sso.sh   # Auto-installs & configures Keycloak SSO (user_oidc)
+│       ├─ keycloak-sso.sh   # Auto-installs & configures Keycloak SSO (user_oidc)
+│       └─ smtp.sh           # Auto-configures outgoing mail to point at Mailpit
 ├─ traefik/
 │   ├─ traefik.yml         # Traefik static configuration
 │   ├─ dynamic/
@@ -162,7 +170,7 @@ office-suite/
 ### Security
 
 - Certificates generated in step 2 are **local-only, self-signed** and must not be used in production. For a public deployment, configure Traefik with Let's Encrypt instead.
-- The Traefik dashboard (`:8089`) has no authentication — fine for local dev, not for anything network-reachable.
+- The Traefik dashboard (`:8089`) and Mailpit's inbox (`mail.localhost`) have no authentication — fine for local dev, not for anything network-reachable. Every email sent by Nextcloud or Keycloak (including password-reset links) is visible to anyone who can reach Mailpit.
 - `keycloak/realm-office.json` ships placeholder OAuth client secrets (for both `hedgedoc-client` and `nextcloud-client`) and a `demo`/`demo` user, by design, so the stack works out of the box on a fresh clone. Rotate or remove them if this environment becomes reachable by anyone but you.
 - Every other secret in `.env` is randomly generated locally and gitignored — rotate it if it's ever exposed (e.g. accidentally committed).
 

@@ -16,6 +16,8 @@ tls:
       keyFile: /certs/notes.key
     - certFile: /certs/auth.crt
       keyFile: /certs/auth.key
+    - certFile: /certs/mail.crt
+      keyFile: /certs/mail.key
 
   stores:
     default:
