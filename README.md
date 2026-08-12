@@ -105,7 +105,7 @@ echo 127.0.0.1 notes.localhost >> C:\Windows\System32\drivers\etc\hosts
 echo 127.0.0.1 auth.test >> C:\Windows\System32\drivers\etc\hosts
 ```
 
-No entry is needed for `coturn`: Nextcloud Talk is deliberately configured to reach it at `localhost:3478` directly — WebRTC media goes straight from the browser to coturn over UDP, which Traefik can't proxy (there's no HTTP host header on that traffic to route by), so this only works when the browser runs on the same machine as Docker Desktop.
+No entry is needed for `coturn`: Nextcloud Talk is deliberately configured to reach it at `$TURN_HOST:3478` directly — WebRTC media goes straight from the browser to coturn over UDP, which Traefik can't proxy (there's no HTTP host header on that traffic to route by). `TURN_HOST` defaults to `localhost` (works when the browser runs on the same machine as Docker Desktop); see [Sharing with other devices on your network](#sharing-with-other-devices-on-your-network) to let calls work from elsewhere on your LAN too.
 
 ---
 
@@ -125,11 +125,46 @@ Does everything steps 2–4 describe automatically if you skipped them (generate
 - Mailpit: `https://mail.localhost:8443` — every email Nextcloud or Keycloak sends (password resets, share notifications, account emails) shows up here instead of a real inbox
 - MinIO console: `https://storage.localhost:8443` — login with `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` from `.env`; the `nextcloud` bucket holds the actual bytes of every file in Nextcloud (auto-created on first boot)
 
-Calendar, Contacts and Talk show up as regular Nextcloud apps in the top-left app switcher — no separate URL. Talk's audio/video calls work between two browser tabs on the same machine out of the box (coturn is pre-configured); calling from a different device on your LAN needs `localhost:3478` in Nextcloud's Talk admin settings changed to that machine's actual LAN IP. Redis has no UI — it's purely an internal cache/locking backend for Nextcloud.
+Calendar, Contacts and Talk show up as regular Nextcloud apps in the top-left app switcher — no separate URL. Talk's audio/video calls work between two browser tabs on the same machine out of the box; to call between two different devices, see [Sharing with other devices on your network](#sharing-with-other-devices-on-your-network) below. Redis has no UI — it's purely an internal cache/locking backend for Nextcloud.
 
 #### Logging into HedgeDoc or Nextcloud via Keycloak
 
 On first boot, Keycloak automatically imports [`keycloak/realm-office.json`](keycloak/realm-office.json): a dedicated `office` realm containing the `hedgedoc-client` and `nextcloud-client` OAuth clients, and one demo user, **`demo` / `demo`**. Use those credentials on either app's "Sign in via Keycloak" button. Logging into Nextcloud this way auto-creates a matching Nextcloud account on first login (username `demo`, from the `preferred_username` claim). This account is an intentionally public placeholder — delete it or add real users via the Keycloak admin console for anything beyond local testing.
+
+---
+
+### Sharing with other devices on your network
+
+Everything except Talk already works for another device on the same Wi-Fi/LAN, with no config change: Traefik and every service route purely by hostname (Host header / TLS SNI), never by IP, so a second device just needs to be told where those hostnames point.
+
+**On the other device:**
+
+1. Add the same hostnames to its own hosts file, pointing at *this* machine's LAN IP instead of `127.0.0.1` (find your IP with `ipconfig` — the `IPv4 Address` under your active adapter):
+   ```
+   192.168.1.x nextcloud.localhost
+   192.168.1.x office.localhost
+   192.168.1.x notes.localhost
+   192.168.1.x mail.localhost
+   192.168.1.x storage.localhost
+   192.168.1.x auth.test
+   ```
+   Some browser versions ignore a hosts-file override for `*.localhost` and always force it to `127.0.0.1` (it's a special-use TLD, similar to the `curl`/RFC 6761 issue documented for Keycloak elsewhere in this README) — if a `.localhost` URL stubbornly loads *your own* machine instead of this one even with the entry in place, that's what's happening; `auth.test` is unaffected either way, it was chosen specifically to avoid this class of bug.
+2. Import this machine's `traefik/certs/ca.crt` into its OS/browser trust store — send it over however you'd share any file, it's not a secret. Without it, every page loads with a certificate warning (the private key never leaves this machine, only the public CA certificate is needed).
+
+**On this machine**, for Talk (audio/video calls) to work between two different devices — WebRTC media bypasses Traefik entirely (see the note in `docker-compose.yml`'s `coturn` service), so it needs a real IP, not a hostname:
+
+1. Set `TURN_HOST` in `.env` to this machine's LAN IP (same `ipconfig` output as above).
+2. This only takes effect on a fresh install via the `talk.sh` hook — on an *existing* instance, apply it directly instead:
+   ```bash
+   docker compose --env-file .env exec -T nextcloud su -p www-data -s /bin/sh -c "
+     php /var/www/html/occ talk:stun:delete 'localhost:3478'
+     php /var/www/html/occ talk:turn:delete turn localhost udp
+     php /var/www/html/occ talk:stun:add '<your-lan-ip>:3478'
+     php /var/www/html/occ talk:turn:add turn <your-lan-ip> udp --secret='<TURN_SECRET from .env>'
+   "
+   ```
+
+A LAN IP handed out by DHCP can change (router reboot, reconnecting to Wi-Fi) — if calls that used to work suddenly don't, check `ipconfig` again and re-run the commands above with the new IP. Docker Desktop on Windows already opens the inbound firewall rules its containers need (`com.docker.backend.exe`); if a device on your network still can't reach anything, that's the first thing to check in Windows Firewall. Everything documented as insecure-by-default in [Security](#security) applies to anyone on your network too, not just this machine — fine for a home network with a friend, not for anything wider.
 
 ---
 

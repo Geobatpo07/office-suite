@@ -166,6 +166,11 @@ services:
       NEXTCLOUD_OIDC_SECRET: ${NEXTCLOUD_OIDC_SECRET}
       # Doit correspondre au --static-auth-secret du service coturn.
       TURN_SECRET: ${TURN_SECRET}
+      # Adresse a laquelle un navigateur (pas forcement sur cette machine)
+      # peut joindre coturn - voir la note dans talk.sh. "localhost" par
+      # defaut (usage solo) ; IP LAN de cette machine pour partager Talk
+      # avec d'autres appareils du meme reseau.
+      TURN_HOST: ${TURN_HOST:-localhost}
       # Lu par nextcloud/hooks/post-installation/redis.sh.
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       # Stockage primaire S3/MinIO : lues uniquement par l'installeur de
