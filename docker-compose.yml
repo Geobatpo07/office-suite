@@ -162,10 +162,14 @@ services:
       CMD_DEFAULT_PERMISSION: "freely"
       CMD_OAUTH2_PROVIDERNAME: Keycloak
       CMD_OAUTH2_CLIENT_ID: hedgedoc-client
+      # Doit correspondre au secret du client "hedgedoc-client" defini
+      # dans keycloak/realm-office.json (importe automatiquement).
       CMD_OAUTH2_CLIENT_SECRET: ${HEDGEDOC_OAUTH_SECRET}
-      CMD_OAUTH2_AUTHORIZATION_URL: https://auth.localhost:8443/realms/master/protocol/openid-connect/auth
-      CMD_OAUTH2_TOKEN_URL: https://auth.localhost:8443/realms/master/protocol/openid-connect/token
-      CMD_OAUTH2_USER_PROFILE_URL: https://auth.localhost:8443/realms/master/protocol/openid-connect/userinfo
+      # Realm dedie "office", pas "master" : master est reserve a
+      # l'administration de Keycloak lui-meme, pas aux clients applicatifs.
+      CMD_OAUTH2_AUTHORIZATION_URL: https://auth.localhost:8443/realms/office/protocol/openid-connect/auth
+      CMD_OAUTH2_TOKEN_URL: https://auth.localhost:8443/realms/office/protocol/openid-connect/token
+      CMD_OAUTH2_USER_PROFILE_URL: https://auth.localhost:8443/realms/office/protocol/openid-connect/userinfo
       CMD_OAUTH2_USER_PROFILE_USERNAME_ATTR: preferred_username
       CMD_OAUTH2_USER_PROFILE_DISPLAY_NAME_ATTR: name
       CMD_OAUTH2_USER_PROFILE_EMAIL_ATTR: email
@@ -191,7 +195,11 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
     restart: unless-stopped
-    command: start-dev
+    # --import-realm charge automatiquement tout fichier JSON depose
+    # dans /opt/keycloak/data/import au premier demarrage (si le realm
+    # n'existe pas deja) : c'est ce qui rend le client OAuth HedgeDoc
+    # reproductible sur un clone frais, sans etape manuelle via kcadm.
+    command: start-dev --import-realm
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_USER}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_PASSWORD}
@@ -205,6 +213,7 @@ services:
       # start-dev utilise une base H2 locale : sans volume, tous les
       # realms/clients/utilisateurs disparaissent a la recreation.
       - keycloak_data:/opt/keycloak/data
+      - ./keycloak/realm-office.json:/opt/keycloak/data/import/realm-office.json:ro
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.keycloak.rule=Host(`auth.localhost`)"

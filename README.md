@@ -1,30 +1,28 @@
 ### Office Suite Dev Environment
 
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
-[![Traefik](https://img.shields.io/badge/traefik-v3.0-orange.svg)](https://traefik.io/)
-[![SSL](https://img.shields.io/badge/SSL-mkcert-green.svg)](https://github.com/FiloSottile/mkcert)
+[![Traefik](https://img.shields.io/badge/traefik-v3.7-orange.svg)](https://traefik.io/)
+[![SSL](https://img.shields.io/badge/SSL-mkcert%20%7C%20openssl-green.svg)](https://github.com/FiloSottile/mkcert)
 
-A complete local office suite for development and testing, using **Nextcloud**, **OnlyOffice**, **HedgeDoc**, and **Keycloak** behind a **Traefik** reverse proxy with local SSL certificates via **mkcert**.
+A complete local office suite for development and testing, using **Nextcloud**, **OnlyOffice**, **HedgeDoc**, and **Keycloak** behind a **Traefik** reverse proxy with local SSL certificates.
 
 ---
 
 ### Included Services
 
-- **Traefik**: HTTPS reverse proxy with dashboard  
-- **Nextcloud**: cloud storage and collaboration  
-- **OnlyOffice**: online document editing  
-- **HedgeDoc**: collaborative note-taking  
-- **Keycloak**: authentication and OAuth2 management  
-- **PostgreSQL**: database for Nextcloud and HedgeDoc  
+- **Traefik**: HTTPS reverse proxy with dashboard
+- **Nextcloud**: cloud storage and collaboration
+- **OnlyOffice**: online document editing
+- **HedgeDoc**: collaborative note-taking, with OAuth2 login against Keycloak pre-configured out of the box
+- **Keycloak**: authentication and OAuth2 management
+- **PostgreSQL**: database for Nextcloud and HedgeDoc
 
 ---
 
 ### Prerequisites
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop) (Windows)  
-- [Docker Compose v2+](https://docs.docker.com/compose/install/)  
-- [Chocolatey](https://chocolatey.org/) (optional for mkcert)  
-- [mkcert](https://github.com/FiloSottile/mkcert) for local SSL  
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) (Windows), with Docker Engine 29+ / Docker Compose v2+
+- Either [mkcert](https://github.com/FiloSottile/mkcert) (needs admin rights and, on Windows, Chocolatey or a manual install), **or** nothing extra at all — this repo ships a Docker-based certificate generator that needs no local install and no admin rights (see step 2 below).
 
 ---
 
@@ -37,40 +35,44 @@ git clone https://github.com/Geobatpo07/office-suite.git
 cd office-suite
 ```
 
-#### 2. Install mkcert and generate certificates
+#### 2. Generate local TLS certificates
+
+Traefik needs one certificate per domain in `./traefik/certs/` before the first start. Pick one option.
+
+**Option A — mkcert** (if you have admin rights / Chocolatey):
 
 ```powershell
 choco install mkcert
 mkcert -install
-mkcert nextcloud.localhost office.localhost notes.localhost auth.localhost
+mkcert -cert-file traefik/certs/nextcloud.crt -key-file traefik/certs/nextcloud.key nextcloud.localhost
+mkcert -cert-file traefik/certs/office.crt     -key-file traefik/certs/office.key     office.localhost
+mkcert -cert-file traefik/certs/notes.crt      -key-file traefik/certs/notes.key      notes.localhost
+mkcert -cert-file traefik/certs/auth.crt       -key-file traefik/certs/auth.key       auth.localhost
 ```
 
-Certificates will be placed in `./traefik/certs`.
+**Option B — bundled OpenSSL generator** (no admin rights, no install — used when mkcert isn't available):
+
+```bash
+mkdir -p traefik/certs
+docker run --rm -v "$PWD/traefik/certs:/certs" -v "$PWD/traefik/gen-certs.sh:/gen-certs.sh:ro" \
+  --entrypoint sh alpine/openssl /gen-certs.sh
+```
+
+This creates a local CA plus one certificate per domain. To avoid a browser warning, import `traefik/certs/ca.crt` into your OS/browser's trusted root certificate store. Either way, `traefik/certs/` is gitignored (it contains private keys) — every clone must regenerate it.
 
 #### 3. Configure the `.env` file
 
-Create a `.env` file at the project root:
-
-```env
-NETWORK_NAME=office_net
-
-NEXTCLOUD_DB_USER=nextcloud
-NEXTCLOUD_DB_PASSWORD=changeme
-NEXTCLOUD_DB_NAME=nextcloud_db
-
-HEDGEDOC_DB_USER=hedgedoc
-HEDGEDOC_DB_PASSWORD=changeme
-HEDGEDOC_DB_NAME=hedgedoc_db
-
-JWT_SECRET=secretjwt123
-
-KEYCLOAK_USER=admin
-KEYCLOAK_PASSWORD=changeme
+```bash
+cp .env.example .env
 ```
+
+Then replace every `changeme` value with a random secret, e.g. `openssl rand -hex 24` (PowerShell: `[System.Convert]::ToHexString((1..24|%{Get-Random -Max 256}))`) — **except `HEDGEDOC_OAUTH_SECRET`**, which must stay equal to the client secret baked into [`keycloak/realm-office.json`](keycloak/realm-office.json) (imported automatically on first boot). If you want a private value there too, edit that JSON file *before* the first `docker compose up` and keep both in sync.
+
+`.env` is gitignored — never commit it.
 
 #### 4. Edit the hosts file (Windows)
 
-Add these entries:
+Chrome and Firefox already resolve `*.localhost` to `127.0.0.1` on their own (RFC 6761), so this step is only needed for tools that don't (e.g. `curl` on Windows) or other browsers:
 
 ```text
 127.0.0.1 nextcloud.localhost
@@ -96,20 +98,24 @@ echo 127.0.0.1 auth.localhost >> C:\Windows\System32\drivers\etc\hosts
 docker compose --env-file .env up -d
 ```
 
-- Traefik: `https://localhost:8089`  
-- Nextcloud: `https://nextcloud.localhost`  
-- OnlyOffice: `https://office.localhost`  
-- HedgeDoc: `https://notes.localhost`  
-- Keycloak: `https://auth.localhost`  
+- Traefik dashboard: `http://localhost:8089/dashboard/` (no auth — local dev only)
+- Nextcloud: `https://nextcloud.localhost:8443` — login with `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` from `.env`
+- OnlyOffice: `https://office.localhost:8443` — opened through Nextcloud, no standalone login
+- HedgeDoc: `https://notes.localhost:8443` — click "Sign in via Keycloak"
+- Keycloak: `https://auth.localhost:8443/admin/` — login with `KEYCLOAK_USER` / `KEYCLOAK_PASSWORD` from `.env`
+
+#### Logging into HedgeDoc via Keycloak
+
+On first boot, Keycloak automatically imports [`keycloak/realm-office.json`](keycloak/realm-office.json): a dedicated `office` realm containing the `hedgedoc-client` OAuth client and one demo user, **`demo` / `demo`**. Use those credentials to test the "Sign in via Keycloak" button on HedgeDoc. This account is an intentionally public placeholder — delete it or add real users via the Keycloak admin console for anything beyond local testing.
 
 ---
 
 ### Usage
 
-- All services communicate via the Docker network `office_net`.  
-- Nextcloud and HedgeDoc use PostgreSQL for data persistence.  
-- OnlyOffice requires `JWT_SECRET` for internal authentication.  
-- Traefik handles HTTPS using mkcert certificates.  
+- All services communicate via the Docker network `office_net`.
+- Nextcloud and HedgeDoc use PostgreSQL for data persistence; OnlyOffice and Keycloak have their own dedicated volumes.
+- OnlyOffice requires `JWT_SECRET` for internal authentication with Nextcloud.
+- Traefik terminates HTTPS using the certificates generated in step 2.
 
 ---
 
@@ -119,6 +125,8 @@ docker compose --env-file .env up -d
 docker compose --env-file .env down -v
 ```
 
+`-v` also deletes all data volumes (documents, notes, Keycloak realms/users, databases) — drop it to keep your data across restarts.
+
 ---
 
 ### Project structure
@@ -126,12 +134,18 @@ docker compose --env-file .env down -v
 ```
 office-suite/
 │
-├─ .devcontainer/        # VS Code / JetBrains configuration
+├─ .devcontainer/          # VS Code / JetBrains configuration
+├─ keycloak/
+│   └─ realm-office.json   # Auto-imported realm: hedgedoc-client + demo user
 ├─ traefik/
-│   ├─ traefik.yml       # Traefik configuration
-│   └─ certs/            # mkcert certificates
+│   ├─ traefik.yml         # Traefik static configuration
+│   ├─ dynamic/
+│   │   └─ tls.yml         # Traefik dynamic configuration (TLS certificates)
+│   ├─ gen-certs.sh        # OpenSSL-based certificate generator (mkcert alternative)
+│   └─ certs/              # Generated certificates (gitignored, not shipped)
 ├─ docker-compose.yml
-├─ .env
+├─ .env.example            # Template — copy to .env and fill in real secrets
+├─ .env                    # Your local secrets (gitignored, not shipped)
 └─ README.md
 ```
 
@@ -139,8 +153,10 @@ office-suite/
 
 ### Security
 
-- mkcert certificates are **local** and must not be used in production.  
-- For a public deployment, configure Traefik with official Let’s Encrypt.  
+- Certificates generated in step 2 are **local-only, self-signed** and must not be used in production. For a public deployment, configure Traefik with Let's Encrypt instead.
+- The Traefik dashboard (`:8089`) has no authentication — fine for local dev, not for anything network-reachable.
+- `keycloak/realm-office.json` ships a placeholder OAuth client secret and a `demo`/`demo` user, by design, so the stack works out of the box on a fresh clone. Rotate or remove them if this environment becomes reachable by anyone but you.
+- Every other secret in `.env` is randomly generated locally and gitignored — rotate it if it's ever exposed (e.g. accidentally committed).
 
 ---
 

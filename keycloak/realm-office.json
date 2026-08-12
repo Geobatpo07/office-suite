@@ -1,0 +1,36 @@
+{
+  "realm": "office",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "hedgedoc-client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "changeme-hedgedoc-oauth-secret",
+      "redirectUris": ["https://notes.localhost:8443/auth/oauth2/callback"],
+      "webOrigins": ["https://notes.localhost:8443"]
+    }
+  ],
+  "users": [
+    {
+      "username": "demo",
+      "enabled": true,
+      "email": "demo@office.localhost",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
