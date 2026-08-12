@@ -1,3 +1,12 @@
+# ============================================================
+# Traefik - CONFIGURATION STATIQUE uniquement.
+# Rappel: Traefik ne lit la conf statique que depuis UNE source
+# (fichier > flags CLI > env). Ce fichier etant monte, le bloc
+# `command:` du docker-compose serait ignore : il a donc ete retire.
+# Tout ce qui est dynamique (TLS, routeurs, middlewares) vit dans
+# ./dynamic/ ou dans les labels Docker.
+# ============================================================
+
 entryPoints:
   web:
     address: ":8081"
@@ -9,21 +18,23 @@ entryPoints:
   websecure:
     address: ":8443"
 
-tls:
-  certificates:
-    - certFile: /certs/nextcloud.crt
-      keyFile: /certs/nextcloud.key
-    - certFile: /certs/office.crt
-      keyFile: /certs/office.key
-    - certFile: /certs/notes.crt
-      keyFile: /certs/notes.key
-    - certFile: /certs/auth.crt
-      keyFile: /certs/auth.key
-
 providers:
   docker:
     exposedByDefault: false
+    # Reseau a utiliser pour joindre les conteneurs (prefixe par le
+    # nom de projet COMPOSE_PROJECT_NAME defini dans .env).
+    network: office_suite_office_net
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
 
+# Dashboard sur l'entrypoint interne `traefik` (:8080), publie en 8089.
+# insecure = pas d'authentification : acceptable en dev local uniquement.
 api:
   dashboard: true
+  insecure: true
 
+log:
+  level: INFO
+
+accessLog: {}

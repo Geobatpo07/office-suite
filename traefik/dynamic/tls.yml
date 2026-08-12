@@ -1,0 +1,24 @@
+# ============================================================
+# Traefik - CONFIGURATION DYNAMIQUE (chargee via providers.file).
+# Les certificats TLS ne peuvent PAS etre declares dans la conf
+# statique : c'est la raison pour laquelle ils n'etaient jamais
+# servis auparavant (Traefik retombait sur son certificat
+# auto-signe "TRAEFIK DEFAULT CERT").
+# ============================================================
+
+tls:
+  certificates:
+    - certFile: /certs/nextcloud.crt
+      keyFile: /certs/nextcloud.key
+    - certFile: /certs/office.crt
+      keyFile: /certs/office.key
+    - certFile: /certs/notes.crt
+      keyFile: /certs/notes.key
+    - certFile: /certs/auth.crt
+      keyFile: /certs/auth.key
+
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /certs/nextcloud.crt
+        keyFile: /certs/nextcloud.key

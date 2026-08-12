@@ -8,38 +8,50 @@ services:
   # Traefik HTTPS Reverse Proxy
   # ================================
   traefik:
-    image: traefik:v3.0
+    # v3.0 (et jusqu'a v3.5) negocie l'API Docker en 1.24, or Docker
+    # Engine 29+ impose un minimum de 1.40 => le provider Docker ne
+    # demarrait pas du tout. v3.7 negocie correctement la version.
+    image: traefik:v3.7
     container_name: traefik
-    restart: always
-    command:
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:8081"
-      - "--entrypoints.websecure.address=:8443"
-      - "--api.dashboard=true"
+    restart: unless-stopped
+    # Pas de `command:` ici : traefik.yml etant monte, les flags CLI
+    # seraient ignores (sources de conf statique mutuellement exclusives).
     ports:
       - "8081:8081"   # HTTP Traefik
       - "8443:8443"   # HTTPS Traefik
       - "8089:8080"   # Dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./traefik/traefik.yml:/etc/traefik/traefik.yml
-      - ./traefik/certs:/certs
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - ./traefik/certs:/certs:ro
     networks:
-      - office_net
+      office_net:
+        # Permet aux conteneurs de resoudre les domaines publics
+        # entre eux (Nextcloud -> OnlyOffice, HedgeDoc -> Keycloak).
+        aliases:
+          - nextcloud.localhost
+          - office.localhost
+          - notes.localhost
+          - auth.localhost
 
   # ================================
   # PostgreSQL for Nextcloud
   # ================================
   nextcloud-db:
     image: postgres:16
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${NEXTCLOUD_DB_USER}
       POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
       POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
     volumes:
       - nextcloud_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NEXTCLOUD_DB_USER} -d ${NEXTCLOUD_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - office_net
 
@@ -48,15 +60,26 @@ services:
   # ================================
   nextcloud:
     image: nextcloud:29-apache
-    restart: always
+    restart: unless-stopped
     depends_on:
-      - nextcloud-db
+      nextcloud-db:
+        condition: service_healthy
     environment:
       POSTGRES_HOST: nextcloud-db
       POSTGRES_DB: ${NEXTCLOUD_DB_NAME}
       POSTGRES_USER: ${NEXTCLOUD_DB_USER}
       POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
-      NEXTCLOUD_TRUSTED_DOMAINS: nextcloud.localhost
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
+      # Le port fait partie du domaine de confiance : sans lui,
+      # Nextcloud repond "Access through untrusted domain".
+      NEXTCLOUD_TRUSTED_DOMAINS: "nextcloud.localhost nextcloud.localhost:8443 localhost"
+      # Terminaison TLS assuree par Traefik : sans ces variables,
+      # Nextcloud genere des URLs http:// => boucles de redirection.
+      OVERWRITEPROTOCOL: https
+      OVERWRITEHOST: nextcloud.localhost:8443
+      OVERWRITECLIURL: https://nextcloud.localhost:8443
+      TRUSTED_PROXIES: 172.16.0.0/12
     volumes:
       - nextcloud_data:/var/www/html
     labels:
@@ -64,6 +87,7 @@ services:
       - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.localhost`)"
       - "traefik.http.routers.nextcloud.entrypoints=websecure"
       - "traefik.http.routers.nextcloud.tls=true"
+      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
     networks:
       - office_net
 
@@ -71,17 +95,24 @@ services:
   # OnlyOffice
   # ================================
   onlyoffice:
-    image: onlyoffice/documentserver
-    restart: always
+    image: onlyoffice/documentserver:8.1
+    restart: unless-stopped
     environment:
       - JWT_ENABLED=true
       - JWT_SECRET=${JWT_SECRET}
-      - JWT_HEADER=Authorization
+      # Le connecteur Nextcloud attend cet en-tete, pas "Authorization".
+      - JWT_HEADER=AuthorizationJwt
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_log:/var/log/onlyoffice
+      - onlyoffice_db:/var/lib/postgresql
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.office.rule=Host(`office.localhost`)"
       - "traefik.http.routers.office.entrypoints=websecure"
       - "traefik.http.routers.office.tls=true"
+      # L'image expose 80 ET 443 : sans ce label Traefik ne peut pas choisir.
+      - "traefik.http.services.office.loadbalancer.server.port=80"
     networks:
       - office_net
 
@@ -90,13 +121,18 @@ services:
   # ================================
   hedgedoc-db:
     image: postgres:16
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${HEDGEDOC_DB_USER}
       POSTGRES_PASSWORD: ${HEDGEDOC_DB_PASSWORD}
       POSTGRES_DB: ${HEDGEDOC_DB_NAME}
     volumes:
       - hedgedoc_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${HEDGEDOC_DB_USER} -d ${HEDGEDOC_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - office_net
 
@@ -105,26 +141,47 @@ services:
   # ================================
   hedgedoc:
     image: quay.io/hedgedoc/hedgedoc:1.9.9
-    restart: always
+    restart: unless-stopped
     depends_on:
-      - hedgedoc-db
-      - keycloak
+      hedgedoc-db:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
     environment:
       CMD_DB_URL: postgres://${HEDGEDOC_DB_USER}:${HEDGEDOC_DB_PASSWORD}@hedgedoc-db:5432/${HEDGEDOC_DB_NAME}
       CMD_DOMAIN: notes.localhost
       CMD_PROTOCOL_USESSL: "true"
+      # HedgeDoc construit ses URLs publiques (dont le redirect_uri OAuth)
+      # a partir de CMD_PORT : le port interne doit donc etre le port
+      # public (8443), sinon le callback OAuth pointe vers ":3000" ou
+      # aucun port, ce que Keycloak rejette (redirect_uri mismatch).
+      CMD_PORT: "8443"
+      CMD_URL_ADDPORT: "true"
+      # Sans secret fixe, les sessions sautent a chaque redemarrage.
+      CMD_SESSION_SECRET: ${HEDGEDOC_SESSION_SECRET}
       CMD_DEFAULT_PERMISSION: "freely"
       CMD_OAUTH2_PROVIDERNAME: Keycloak
       CMD_OAUTH2_CLIENT_ID: hedgedoc-client
-      CMD_OAUTH2_CLIENT_SECRET: hedgedoc_secret
+      CMD_OAUTH2_CLIENT_SECRET: ${HEDGEDOC_OAUTH_SECRET}
       CMD_OAUTH2_AUTHORIZATION_URL: https://auth.localhost:8443/realms/master/protocol/openid-connect/auth
       CMD_OAUTH2_TOKEN_URL: https://auth.localhost:8443/realms/master/protocol/openid-connect/token
       CMD_OAUTH2_USER_PROFILE_URL: https://auth.localhost:8443/realms/master/protocol/openid-connect/userinfo
+      CMD_OAUTH2_USER_PROFILE_USERNAME_ATTR: preferred_username
+      CMD_OAUTH2_USER_PROFILE_DISPLAY_NAME_ATTR: name
+      CMD_OAUTH2_USER_PROFILE_EMAIL_ATTR: email
+      CMD_OAUTH2_SCOPE: "openid email profile"
+      # Les appels OAuth token/userinfo sont faits cote serveur : Node
+      # doit faire confiance a la CA locale qui signe auth.localhost.
+      NODE_EXTRA_CA_CERTS: /certs/ca.crt
+    volumes:
+      - hedgedoc_uploads:/hedgedoc/public/uploads
+      - ./traefik/certs/ca.crt:/certs/ca.crt:ro
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.hedgedoc.rule=Host(`notes.localhost`)"
       - "traefik.http.routers.hedgedoc.entrypoints=websecure"
       - "traefik.http.routers.hedgedoc.tls=true"
+      - "traefik.http.services.hedgedoc.loadbalancer.server.port=8443"
     networks:
       - office_net
 
@@ -133,16 +190,28 @@ services:
   # ================================
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
-    restart: always
+    restart: unless-stopped
     command: start-dev
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_USER}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_PASSWORD}
+      # Derriere un proxy qui termine le TLS, sans ces variables
+      # Keycloak emet de mauvaises URLs de redirection.
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: https://auth.localhost:8443
+      KC_HOSTNAME_STRICT: "false"
+    volumes:
+      # start-dev utilise une base H2 locale : sans volume, tous les
+      # realms/clients/utilisateurs disparaissent a la recreation.
+      - keycloak_data:/opt/keycloak/data
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.keycloak.rule=Host(`auth.localhost`)"
       - "traefik.http.routers.keycloak.entrypoints=websecure"
       - "traefik.http.routers.keycloak.tls=true"
+      # L'image expose 8080, 8443 et 9000 : label obligatoire.
+      - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
     networks:
       - office_net
 
@@ -153,6 +222,11 @@ volumes:
   nextcloud_data:
   nextcloud_db_data:
   hedgedoc_db_data:
+  hedgedoc_uploads:
+  onlyoffice_data:
+  onlyoffice_log:
+  onlyoffice_db:
+  keycloak_data:
 
 # ================================
 # Network

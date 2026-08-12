@@ -103,3 +103,9 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+
+### Office Suite - secrets et certificats locaux
+.env
+.env.*
+!.env.example
+traefik/certs/
