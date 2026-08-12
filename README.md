@@ -19,6 +19,8 @@ A complete local office suite for development and testing, using **Nextcloud**, 
 - **Mailpit**: local SMTP catch-all — password resets, share notifications and Keycloak account emails are all pre-wired to land here instead of a real inbox
 - **Calendar, Contacts, Talk**: pre-installed Nextcloud apps for CalDAV/CardDAV and chat/video calls, the latter backed by a local coturn STUN/TURN server
 - **PostgreSQL**: database for Nextcloud and HedgeDoc
+- Every service has a CPU/memory ceiling (`deploy.resources.limits` in `docker-compose.yml`) so one runaway container (OnlyOffice's conversion process is the usual suspect) can't starve the rest of the stack or your host
+- **Backups**: `scripts/backup.sh` / `scripts/restore.sh` — one command each, see [Backups](#backups) below
 
 ---
 
@@ -146,6 +148,26 @@ docker compose --env-file .env down -v
 
 ---
 
+### Backups
+
+```bash
+bash scripts/backup.sh
+```
+
+Creates `backups/<UTC timestamp>/` containing: a `pg_dump` of both Postgres databases (`nextcloud-db.sql`, `hedgedoc-db.sql`, dumped with `--no-owner --no-acl` so a restore always lands on whatever role runs it, regardless of what owns the tables in the source), and a tar of every volume holding user data (`nextcloud_data`, `hedgedoc_uploads`, `onlyoffice_data`, `onlyoffice_db`, `keycloak_data` — `onlyoffice_log` is skipped, it's disposable). Nextcloud is put into maintenance mode only for the few seconds it takes to tar `nextcloud_data`, so no in-flight upload gets archived half-written; the script always turns it back off before exiting, even on failure.
+
+`backups/` is gitignored — it holds real user data and must not end up in the public repo. Move backups you want to keep somewhere durable (external disk, cloud storage) yourself; this script only produces them locally. It does **not** back up `.env` — without the same `NEXTCLOUD_DB_PASSWORD`/`HEDGEDOC_DB_PASSWORD`/etc. that were live at backup time, app containers can't reconnect to a restored database. Keep `.env` backed up separately (password manager or vault), never next to the archive itself.
+
+To restore:
+
+```bash
+bash scripts/restore.sh backups/<timestamp>
+```
+
+This is destructive — it stops the stack, wipes and replaces the 5 volumes above, and drops/recreates both databases from the dumps, then brings everything back up. It asks for a typed `yes` confirmation first (skip the prompt with a trailing `--yes` for scripted use). Run it from a clone whose `.env` already matches the one that produced the backup.
+
+---
+
 ### Project structure
 
 ```
@@ -168,6 +190,10 @@ office-suite/
 │   │   └─ tls.yml         # Traefik dynamic configuration (TLS certificates)
 │   ├─ gen-certs.sh        # OpenSSL-based certificate generator (mkcert alternative)
 │   └─ certs/              # Generated certificates (gitignored, not shipped)
+├─ scripts/
+│   ├─ backup.sh           # Dumps both databases + tars every data volume
+│   └─ restore.sh          # Disaster recovery: restores a backup.sh output (destructive)
+├─ backups/                # Local backups (gitignored, not shipped)
 ├─ docker-compose.yml
 ├─ .env.example            # Template — copy to .env and fill in real secrets
 ├─ .env                    # Your local secrets (gitignored, not shipped)
@@ -183,6 +209,8 @@ office-suite/
 - `keycloak/realm-office.json` ships placeholder OAuth client secrets (for both `hedgedoc-client` and `nextcloud-client`) and a `demo`/`demo` user, by design, so the stack works out of the box on a fresh clone. Rotate or remove them if this environment becomes reachable by anyone but you.
 - Every other secret in `.env` is randomly generated locally and gitignored — rotate it if it's ever exposed (e.g. accidentally committed).
 - `coturn` runs without TLS/DTLS (plain `turn:`, not `turns:`) for simplicity — fine for local dev, not for a TURN server reachable beyond your own machine.
+- Every service is capped with `deploy.resources.limits` (see `docker-compose.yml`); a container hitting its memory limit gets OOM-killed and restarted (`restart: unless-stopped`) rather than degrading the whole host. Adjust the values if your machine has less than ~8 GB free for Docker or you hit OOM kills under normal use.
+- `backups/` contains complete, unencrypted copies of every user's files, notes, and database rows. Treat it with the same care as production data even in a dev setup, and never commit it (it's gitignored) or upload it anywhere `.env` isn't equally protected.
 
 ---
 

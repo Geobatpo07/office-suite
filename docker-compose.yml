@@ -35,6 +35,11 @@ services:
           - office.localhost
           - notes.localhost
           - auth.test
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128M
 
   # ================================
   # PostgreSQL for Nextcloud
@@ -55,6 +60,11 @@ services:
       retries: 10
     networks:
       - office_net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
 
   # ================================
   # Nextcloud
@@ -114,6 +124,11 @@ services:
       - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
     networks:
       - office_net
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 1024M
 
   # ================================
   # OnlyOffice
@@ -139,6 +154,14 @@ services:
       - "traefik.http.services.office.loadbalancer.server.port=80"
     networks:
       - office_net
+    deploy:
+      resources:
+        limits:
+          # Le plus gourmand du stack : la conversion de documents
+          # (docx/xlsx/pptx <-> ODF) tourne dans ce conteneur, pas dans
+          # Nextcloud.
+          cpus: "2.00"
+          memory: 2048M
 
   # ================================
   # PostgreSQL for HedgeDoc
@@ -159,6 +182,11 @@ services:
       retries: 10
     networks:
       - office_net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
 
   # ================================
   # HedgeDoc
@@ -212,6 +240,11 @@ services:
       - "traefik.http.services.hedgedoc.loadbalancer.server.port=8443"
     networks:
       - office_net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
 
   # ================================
   # Mailpit - Local SMTP catch-all for dev
@@ -229,6 +262,11 @@ services:
       - "traefik.http.services.mailpit.loadbalancer.server.port=8025"
     networks:
       - office_net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
 
   # ================================
   # coturn - STUN/TURN server for Nextcloud Talk
@@ -258,6 +296,11 @@ services:
       - "49160-49200:49160-49200/udp"
     networks:
       - office_net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128M
 
   # ================================
   # Keycloak
@@ -300,6 +343,13 @@ services:
       - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
     networks:
       - office_net
+    deploy:
+      resources:
+        limits:
+          # JVM : Keycloak reserve une bonne partie de son tas au demarrage,
+          # meme en dev.
+          cpus: "1.00"
+          memory: 1024M
 
   # ================================
   # Keycloak SMTP config (one-shot)
@@ -317,6 +367,11 @@ services:
       - ./keycloak/configure-smtp.sh:/configure-smtp.sh:ro
     networks:
       - office_net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
 
 # ================================
 # Volumes

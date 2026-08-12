@@ -109,3 +109,6 @@ $RECYCLE.BIN/
 .env.*
 !.env.example
 traefik/certs/
+
+### Office Suite - sauvegardes locales (contiennent des donnees utilisateur)
+backups/
