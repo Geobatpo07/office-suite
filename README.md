@@ -17,6 +17,7 @@ A complete local office suite for development and testing, using **Nextcloud**, 
 - **OnlyOffice ↔ Nextcloud connector**: pre-wired on first boot — open and co-edit `.docx`/`.xlsx`/`.pptx` files directly from Nextcloud's Files app, no manual setup
 - **Keycloak**: authentication and OAuth2 management, as SSO for both HedgeDoc and Nextcloud out of the box
 - **Mailpit**: local SMTP catch-all — password resets, share notifications and Keycloak account emails are all pre-wired to land here instead of a real inbox
+- **Calendar, Contacts, Talk**: pre-installed Nextcloud apps for CalDAV/CardDAV and chat/video calls, the latter backed by a local coturn STUN/TURN server
 - **PostgreSQL**: database for Nextcloud and HedgeDoc
 
 ---
@@ -52,6 +53,8 @@ mkcert -cert-file traefik/certs/notes.crt      -key-file traefik/certs/notes.key
 mkcert -cert-file traefik/certs/auth.crt       -key-file traefik/certs/auth.key       auth.test
 mkcert -cert-file traefik/certs/mail.crt       -key-file traefik/certs/mail.key       mail.localhost
 ```
+
+`coturn` (Talk's STUN/TURN server) needs no certificate — it's plain UDP/TCP, not HTTPS, and isn't routed through Traefik at all (see the note in step 4).
 
 Keycloak's own certificate covers `auth.test`, not `auth.localhost` like the other three — see the note in step 4.
 
@@ -97,6 +100,8 @@ echo 127.0.0.1 notes.localhost >> C:\Windows\System32\drivers\etc\hosts
 echo 127.0.0.1 auth.test >> C:\Windows\System32\drivers\etc\hosts
 ```
 
+No entry is needed for `coturn`: Nextcloud Talk is deliberately configured to reach it at `localhost:3478` directly — WebRTC media goes straight from the browser to coturn over UDP, which Traefik can't proxy (there's no HTTP host header on that traffic to route by), so this only works when the browser runs on the same machine as Docker Desktop.
+
 ---
 
 ### Start the suite
@@ -112,6 +117,8 @@ docker compose --env-file .env up -d
 - Keycloak: `https://auth.test:8443/admin/` — login with `KEYCLOAK_USER` / `KEYCLOAK_PASSWORD` from `.env`
 - Mailpit: `https://mail.localhost:8443` — every email Nextcloud or Keycloak sends (password resets, share notifications, account emails) shows up here instead of a real inbox
 
+Calendar, Contacts and Talk show up as regular Nextcloud apps in the top-left app switcher — no separate URL. Talk's audio/video calls work between two browser tabs on the same machine out of the box (coturn is pre-configured); calling from a different device on your LAN needs `localhost:3478` in Nextcloud's Talk admin settings changed to that machine's actual LAN IP.
+
 #### Logging into HedgeDoc or Nextcloud via Keycloak
 
 On first boot, Keycloak automatically imports [`keycloak/realm-office.json`](keycloak/realm-office.json): a dedicated `office` realm containing the `hedgedoc-client` and `nextcloud-client` OAuth clients, and one demo user, **`demo` / `demo`**. Use those credentials on either app's "Sign in via Keycloak" button. Logging into Nextcloud this way auto-creates a matching Nextcloud account on first login (username `demo`, from the `preferred_username` claim). This account is an intentionally public placeholder — delete it or add real users via the Keycloak admin console for anything beyond local testing.
@@ -122,7 +129,7 @@ On first boot, Keycloak automatically imports [`keycloak/realm-office.json`](key
 
 - All services communicate via the Docker network `office_net`.
 - Nextcloud and HedgeDoc use PostgreSQL for data persistence; OnlyOffice and Keycloak have their own dedicated volumes.
-- The ONLYOFFICE connector app, Keycloak SSO and SMTP (`nextcloud/hooks/post-installation/*.sh`) are installed and configured automatically the first time Nextcloud boots.
+- The ONLYOFFICE connector app, Keycloak SSO, SMTP, Calendar, Contacts and Talk (`nextcloud/hooks/post-installation/*.sh`) are installed and configured automatically the first time Nextcloud boots.
 - Keycloak's own SMTP settings are applied by the one-shot `keycloak-init` service: Keycloak's file-based realm import silently drops the `smtpServer` block for a brand-new realm (a known limitation — the fields parse fine, they just don't end up on the imported realm), so `keycloak/configure-smtp.sh` sets them via the admin REST API instead, right after Keycloak comes up.
 - Nextcloud trusts the local CA on every container start (see the custom `entrypoint:` on the `nextcloud` service) so its PHP/curl backend can call `https://auth.test:8443` for SSO without a certificate error.
 - Traefik terminates HTTPS using the certificates generated in step 2.
@@ -152,7 +159,9 @@ office-suite/
 │   └─ hooks/post-installation/
 │       ├─ onlyoffice.sh     # Auto-installs & configures the ONLYOFFICE connector app
 │       ├─ keycloak-sso.sh   # Auto-installs & configures Keycloak SSO (user_oidc)
-│       └─ smtp.sh           # Auto-configures outgoing mail to point at Mailpit
+│       ├─ smtp.sh           # Auto-configures outgoing mail to point at Mailpit
+│       ├─ groupware.sh      # Auto-installs Calendar and Contacts
+│       └─ talk.sh           # Auto-installs Talk and points it at coturn
 ├─ traefik/
 │   ├─ traefik.yml         # Traefik static configuration
 │   ├─ dynamic/
@@ -173,6 +182,7 @@ office-suite/
 - The Traefik dashboard (`:8089`) and Mailpit's inbox (`mail.localhost`) have no authentication — fine for local dev, not for anything network-reachable. Every email sent by Nextcloud or Keycloak (including password-reset links) is visible to anyone who can reach Mailpit.
 - `keycloak/realm-office.json` ships placeholder OAuth client secrets (for both `hedgedoc-client` and `nextcloud-client`) and a `demo`/`demo` user, by design, so the stack works out of the box on a fresh clone. Rotate or remove them if this environment becomes reachable by anyone but you.
 - Every other secret in `.env` is randomly generated locally and gitignored — rotate it if it's ever exposed (e.g. accidentally committed).
+- `coturn` runs without TLS/DTLS (plain `turn:`, not `turns:`) for simplicity — fine for local dev, not for a TURN server reachable beyond your own machine.
 
 ---
 

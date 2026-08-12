@@ -90,6 +90,8 @@ services:
       # Doit correspondre au secret du client "nextcloud-client" defini
       # dans keycloak/realm-office.json (importe automatiquement).
       NEXTCLOUD_OIDC_SECRET: ${NEXTCLOUD_OIDC_SECRET}
+      # Doit correspondre au --static-auth-secret du service coturn.
+      TURN_SECRET: ${TURN_SECRET}
       # Le port fait partie du domaine de confiance : sans lui,
       # Nextcloud repond "Access through untrusted domain".
       NEXTCLOUD_TRUSTED_DOMAINS: "nextcloud.localhost nextcloud.localhost:8443 localhost"
@@ -225,6 +227,35 @@ services:
       - "traefik.http.routers.mailpit.entrypoints=websecure"
       - "traefik.http.routers.mailpit.tls=true"
       - "traefik.http.services.mailpit.loadbalancer.server.port=8025"
+    networks:
+      - office_net
+
+  # ================================
+  # coturn - STUN/TURN server for Nextcloud Talk
+  # ================================
+  coturn:
+    image: coturn/coturn:4.6
+    restart: unless-stopped
+    # WebRTC media (audio/video/screenshare) is negotiated directly
+    # between the browser and this server over raw UDP/TCP - it cannot
+    # go through Traefik (no virtual-host routing for non-HTTP traffic),
+    # so these ports are published straight to the host instead.
+    command: >
+      -n
+      --listening-port=3478
+      --min-port=49160
+      --max-port=49200
+      --realm=turn.localhost
+      --use-auth-secret
+      --static-auth-secret=${TURN_SECRET}
+      --no-cli
+      --no-tls
+      --no-dtls
+      --log-file=stdout
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49160-49200:49160-49200/udp"
     networks:
       - office_net
 
