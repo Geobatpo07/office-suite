@@ -14,6 +14,7 @@ A complete local office suite for development and testing, using **Nextcloud**, 
 - **Nextcloud**: cloud storage and collaboration
 - **OnlyOffice**: online document editing
 - **HedgeDoc**: collaborative note-taking, with OAuth2 login against Keycloak pre-configured out of the box
+- **OnlyOffice ↔ Nextcloud connector**: pre-wired on first boot — open and co-edit `.docx`/`.xlsx`/`.pptx` files directly from Nextcloud's Files app, no manual setup
 - **Keycloak**: authentication and OAuth2 management
 - **PostgreSQL**: database for Nextcloud and HedgeDoc
 
@@ -100,7 +101,7 @@ docker compose --env-file .env up -d
 
 - Traefik dashboard: `http://localhost:8089/dashboard/` (no auth — local dev only)
 - Nextcloud: `https://nextcloud.localhost:8443` — login with `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` from `.env`
-- OnlyOffice: `https://office.localhost:8443` — opened through Nextcloud, no standalone login
+- OnlyOffice: `https://office.localhost:8443` — no standalone login; open a document from Nextcloud's Files app instead (click any `.docx`/`.xlsx`/`.pptx`, or "+ > Document/Spreadsheet/Presentation" to create one)
 - HedgeDoc: `https://notes.localhost:8443` — click "Sign in via Keycloak"
 - Keycloak: `https://auth.localhost:8443/admin/` — login with `KEYCLOAK_USER` / `KEYCLOAK_PASSWORD` from `.env`
 
@@ -114,7 +115,7 @@ On first boot, Keycloak automatically imports [`keycloak/realm-office.json`](key
 
 - All services communicate via the Docker network `office_net`.
 - Nextcloud and HedgeDoc use PostgreSQL for data persistence; OnlyOffice and Keycloak have their own dedicated volumes.
-- OnlyOffice requires `JWT_SECRET` for internal authentication with Nextcloud.
+- The ONLYOFFICE connector app (`nextcloud/hooks/post-installation/onlyoffice.sh`) is installed and configured automatically the first time Nextcloud boots, using the shared `JWT_SECRET` to authenticate both directions between Nextcloud and the OnlyOffice service.
 - Traefik terminates HTTPS using the certificates generated in step 2.
 
 ---
@@ -137,6 +138,9 @@ office-suite/
 ├─ .devcontainer/          # VS Code / JetBrains configuration
 ├─ keycloak/
 │   └─ realm-office.json   # Auto-imported realm: hedgedoc-client + demo user
+├─ nextcloud/
+│   └─ hooks/post-installation/
+│       └─ onlyoffice.sh   # Auto-installs & configures the ONLYOFFICE connector app
 ├─ traefik/
 │   ├─ traefik.yml         # Traefik static configuration
 │   ├─ dynamic/

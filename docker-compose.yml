@@ -71,6 +71,10 @@ services:
       POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
+      # Lu par nextcloud/hooks/post-installation/onlyoffice.sh pour
+      # configurer automatiquement le connecteur ONLYOFFICE au premier
+      # demarrage (doit rester identique au JWT_SECRET du service onlyoffice).
+      JWT_SECRET: ${JWT_SECRET}
       # Le port fait partie du domaine de confiance : sans lui,
       # Nextcloud repond "Access through untrusted domain".
       NEXTCLOUD_TRUSTED_DOMAINS: "nextcloud.localhost nextcloud.localhost:8443 localhost"
@@ -82,6 +86,7 @@ services:
       TRUSTED_PROXIES: 172.16.0.0/12
     volumes:
       - nextcloud_data:/var/www/html
+      - ./nextcloud/hooks/post-installation:/docker-entrypoint-hooks.d/post-installation:ro
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.localhost`)"
