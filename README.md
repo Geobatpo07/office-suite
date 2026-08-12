@@ -112,8 +112,10 @@ No entry is needed for `coturn`: Nextcloud Talk is deliberately configured to re
 ### Start the suite
 
 ```bash
-docker compose --env-file .env up -d
+bash scripts/start.sh
 ```
+
+Does everything steps 2–4 describe automatically if you skipped them (generates certs, creates `.env` from the template, warns if `auth.test` is missing from your hosts file), then runs `docker compose --env-file .env up -d` and waits for Nextcloud/Keycloak to finish their first-boot setup before printing every service's URL. Safe to re-run any time — it never touches existing data. Equivalent to running `docker compose --env-file .env up -d` yourself if you'd rather skip the extra checks.
 
 - Traefik dashboard: `http://localhost:8089/dashboard/` (no auth — local dev only)
 - Nextcloud: `https://nextcloud.localhost:8443` — login with `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` from `.env`, or click "Log in with Keycloak"
@@ -198,6 +200,7 @@ office-suite/
 │   ├─ gen-certs.sh        # OpenSSL-based certificate generator (mkcert alternative)
 │   └─ certs/              # Generated certificates (gitignored, not shipped)
 ├─ scripts/
+│   ├─ start.sh            # One-command startup: certs/.env if missing, then up + URL list
 │   ├─ backup.sh           # Dumps both databases + tars every data volume
 │   └─ restore.sh          # Disaster recovery: restores a backup.sh output (destructive)
 ├─ backups/                # Local backups (gitignored, not shipped)
