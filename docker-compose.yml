@@ -228,6 +228,14 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       # Le connecteur Nextcloud attend cet en-tete, pas "Authorization".
       - JWT_HEADER=AuthorizationJwt
+      # Sans ca, la protection anti-SSRF integree d'OnlyOffice
+      # (request-filtering-agent) bloque tout appel de docservice vers
+      # Nextcloud : "http://nextcloud/..." resout vers une IP du reseau
+      # Docker interne (172.18.x.x), qui EST une IP privee par definition
+      # - la bibliotheque appelle abort() dessus, ce qui remonte cote
+      # client comme "Echec du telechargement" des l'ouverture d'un
+      # document, sans rapport avec la taille du fichier ou son contenu.
+      - ALLOW_PRIVATE_IP_ADDRESS=true
     volumes:
       - onlyoffice_data:/var/www/onlyoffice/Data
       - onlyoffice_log:/var/log/onlyoffice
@@ -245,10 +253,17 @@ services:
       resources:
         limits:
           # Le plus gourmand du stack : la conversion de documents
-          # (docx/xlsx/pptx <-> ODF) tourne dans ce conteneur, pas dans
-          # Nextcloud.
-          cpus: "2.00"
-          memory: 2048M
+          # (docx/xlsx/pptx/pdf <-> ODF) tourne dans ce conteneur, pas
+          # dans Nextcloud. 2048M s'est revele trop juste : le service
+          # tourne deja a ~1.2G au repos (rien qu'avec Node.js, le
+          # convertisseur x2t et les workers demarres), ne laissant
+          # quasiment plus de marge pour la conversion elle-meme des
+          # qu'un fichier depasse quelques dizaines de Ko - observe en
+          # conditions reelles avec un PDF d'1 Mo qui echouait
+          # systematiquement a la conversion malgre un telechargement
+          # reussi cote Nextcloud.
+          cpus: "3.00"
+          memory: 3584M
 
   # ================================
   # PostgreSQL for HedgeDoc
