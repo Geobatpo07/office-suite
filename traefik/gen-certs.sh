@@ -12,7 +12,7 @@ cd /certs
 if [ ! -f ca.key ]; then
   openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
     -keyout ca.key -out ca.crt \
-    -subj "/CN=Office Suite Local CA/O=office-suite/C=HT" \
+    -subj "/CN=Office Suite Local CA/O=office-suite/C=FR" \
     -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
     -addext "keyUsage=critical,keyCertSign,cRLSign"
 fi
