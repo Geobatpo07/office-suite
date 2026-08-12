@@ -36,7 +36,11 @@ EOF
 gen nextcloud nextcloud.localhost
 gen office     office.localhost
 gen notes      notes.localhost
-gen auth       auth.localhost
+# Keycloak est volontairement hors *.localhost : curl/libcurl (donc PHP,
+# donc Nextcloud) resout ce TLD en 127.0.0.1 en dur (RFC 6761), meme avec
+# une entree /etc/hosts explicite - inutilisable pour les appels serveur a
+# serveur de user_oidc (discovery/token/userinfo). .test n'a pas ce probleme.
+gen auth       auth.test
 
 chmod 644 *.crt *.key
 ls -l /certs

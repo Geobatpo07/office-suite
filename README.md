@@ -15,7 +15,7 @@ A complete local office suite for development and testing, using **Nextcloud**, 
 - **OnlyOffice**: online document editing
 - **HedgeDoc**: collaborative note-taking, with OAuth2 login against Keycloak pre-configured out of the box
 - **OnlyOffice ↔ Nextcloud connector**: pre-wired on first boot — open and co-edit `.docx`/`.xlsx`/`.pptx` files directly from Nextcloud's Files app, no manual setup
-- **Keycloak**: authentication and OAuth2 management
+- **Keycloak**: authentication and OAuth2 management, as SSO for both HedgeDoc and Nextcloud out of the box
 - **PostgreSQL**: database for Nextcloud and HedgeDoc
 
 ---
@@ -48,8 +48,10 @@ mkcert -install
 mkcert -cert-file traefik/certs/nextcloud.crt -key-file traefik/certs/nextcloud.key nextcloud.localhost
 mkcert -cert-file traefik/certs/office.crt     -key-file traefik/certs/office.key     office.localhost
 mkcert -cert-file traefik/certs/notes.crt      -key-file traefik/certs/notes.key      notes.localhost
-mkcert -cert-file traefik/certs/auth.crt       -key-file traefik/certs/auth.key       auth.localhost
+mkcert -cert-file traefik/certs/auth.crt       -key-file traefik/certs/auth.key       auth.test
 ```
+
+Keycloak's own certificate covers `auth.test`, not `auth.localhost` like the other three — see the note in step 4.
 
 **Option B — bundled OpenSSL generator** (no admin rights, no install — used when mkcert isn't available):
 
@@ -71,24 +73,24 @@ Then replace every `changeme` value with a random secret, e.g. `openssl rand -he
 
 `.env` is gitignored — never commit it.
 
-#### 4. Edit the hosts file (Windows)
+#### 4. Edit the hosts file
 
-Chrome and Firefox already resolve `*.localhost` to `127.0.0.1` on their own (RFC 6761), so this step is only needed for tools that don't (e.g. `curl` on Windows) or other browsers:
+Chrome and Firefox already resolve `*.localhost` to `127.0.0.1` on their own (RFC 6761), so entries for `nextcloud.localhost`/`office.localhost`/`notes.localhost` are only needed for tools that don't (e.g. `curl` on Windows) or other browsers. **`auth.test` is different and always needs an entry**, in every browser: it deliberately isn't under `.localhost` (see the note in `docker-compose.yml`'s `keycloak` service — in short, PHP/curl inside the Nextcloud container hardcodes any `*.localhost` host to loopback, which silently breaks Nextcloud's SSO calls to Keycloak; `.test` doesn't have that problem, but it also isn't auto-resolved by anything).
 
 ```text
 127.0.0.1 nextcloud.localhost
 127.0.0.1 office.localhost
 127.0.0.1 notes.localhost
-127.0.0.1 auth.localhost
+127.0.0.1 auth.test
 ```
 
-Admin CMD tip:
+Admin CMD tip (Windows):
 
 ```cmd
 echo 127.0.0.1 nextcloud.localhost >> C:\Windows\System32\drivers\etc\hosts
 echo 127.0.0.1 office.localhost >> C:\Windows\System32\drivers\etc\hosts
 echo 127.0.0.1 notes.localhost >> C:\Windows\System32\drivers\etc\hosts
-echo 127.0.0.1 auth.localhost >> C:\Windows\System32\drivers\etc\hosts
+echo 127.0.0.1 auth.test >> C:\Windows\System32\drivers\etc\hosts
 ```
 
 ---
@@ -100,14 +102,14 @@ docker compose --env-file .env up -d
 ```
 
 - Traefik dashboard: `http://localhost:8089/dashboard/` (no auth — local dev only)
-- Nextcloud: `https://nextcloud.localhost:8443` — login with `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` from `.env`
+- Nextcloud: `https://nextcloud.localhost:8443` — login with `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` from `.env`, or click "Log in with Keycloak"
 - OnlyOffice: `https://office.localhost:8443` — no standalone login; open a document from Nextcloud's Files app instead (click any `.docx`/`.xlsx`/`.pptx`, or "+ > Document/Spreadsheet/Presentation" to create one)
 - HedgeDoc: `https://notes.localhost:8443` — click "Sign in via Keycloak"
-- Keycloak: `https://auth.localhost:8443/admin/` — login with `KEYCLOAK_USER` / `KEYCLOAK_PASSWORD` from `.env`
+- Keycloak: `https://auth.test:8443/admin/` — login with `KEYCLOAK_USER` / `KEYCLOAK_PASSWORD` from `.env`
 
-#### Logging into HedgeDoc via Keycloak
+#### Logging into HedgeDoc or Nextcloud via Keycloak
 
-On first boot, Keycloak automatically imports [`keycloak/realm-office.json`](keycloak/realm-office.json): a dedicated `office` realm containing the `hedgedoc-client` OAuth client and one demo user, **`demo` / `demo`**. Use those credentials to test the "Sign in via Keycloak" button on HedgeDoc. This account is an intentionally public placeholder — delete it or add real users via the Keycloak admin console for anything beyond local testing.
+On first boot, Keycloak automatically imports [`keycloak/realm-office.json`](keycloak/realm-office.json): a dedicated `office` realm containing the `hedgedoc-client` and `nextcloud-client` OAuth clients, and one demo user, **`demo` / `demo`**. Use those credentials on either app's "Sign in via Keycloak" button. Logging into Nextcloud this way auto-creates a matching Nextcloud account on first login (username `demo`, from the `preferred_username` claim). This account is an intentionally public placeholder — delete it or add real users via the Keycloak admin console for anything beyond local testing.
 
 ---
 
@@ -115,7 +117,8 @@ On first boot, Keycloak automatically imports [`keycloak/realm-office.json`](key
 
 - All services communicate via the Docker network `office_net`.
 - Nextcloud and HedgeDoc use PostgreSQL for data persistence; OnlyOffice and Keycloak have their own dedicated volumes.
-- The ONLYOFFICE connector app (`nextcloud/hooks/post-installation/onlyoffice.sh`) is installed and configured automatically the first time Nextcloud boots, using the shared `JWT_SECRET` to authenticate both directions between Nextcloud and the OnlyOffice service.
+- The ONLYOFFICE connector app and Keycloak SSO (`nextcloud/hooks/post-installation/*.sh`) are installed and configured automatically the first time Nextcloud boots.
+- Nextcloud trusts the local CA on every container start (see the custom `entrypoint:` on the `nextcloud` service) so its PHP/curl backend can call `https://auth.test:8443` for SSO without a certificate error.
 - Traefik terminates HTTPS using the certificates generated in step 2.
 
 ---
@@ -140,7 +143,8 @@ office-suite/
 │   └─ realm-office.json   # Auto-imported realm: hedgedoc-client + demo user
 ├─ nextcloud/
 │   └─ hooks/post-installation/
-│       └─ onlyoffice.sh   # Auto-installs & configures the ONLYOFFICE connector app
+│       ├─ onlyoffice.sh     # Auto-installs & configures the ONLYOFFICE connector app
+│       └─ keycloak-sso.sh   # Auto-installs & configures Keycloak SSO (user_oidc)
 ├─ traefik/
 │   ├─ traefik.yml         # Traefik static configuration
 │   ├─ dynamic/
@@ -159,7 +163,7 @@ office-suite/
 
 - Certificates generated in step 2 are **local-only, self-signed** and must not be used in production. For a public deployment, configure Traefik with Let's Encrypt instead.
 - The Traefik dashboard (`:8089`) has no authentication — fine for local dev, not for anything network-reachable.
-- `keycloak/realm-office.json` ships a placeholder OAuth client secret and a `demo`/`demo` user, by design, so the stack works out of the box on a fresh clone. Rotate or remove them if this environment becomes reachable by anyone but you.
+- `keycloak/realm-office.json` ships placeholder OAuth client secrets (for both `hedgedoc-client` and `nextcloud-client`) and a `demo`/`demo` user, by design, so the stack works out of the box on a fresh clone. Rotate or remove them if this environment becomes reachable by anyone but you.
 - Every other secret in `.env` is randomly generated locally and gitignored — rotate it if it's ever exposed (e.g. accidentally committed).
 
 ---

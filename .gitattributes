@@ -1,0 +1,5 @@
+# These files run inside Linux containers (shell scripts need a valid
+# shebang, occ hook scripts get exec'd directly). CRLF from a Windows
+# checkout (core.autocrlf=true) silently breaks them, so force LF
+# regardless of the cloning machine's autocrlf setting.
+* text=auto eol=lf

@@ -14,6 +14,19 @@
       "secret": "changeme-hedgedoc-oauth-secret",
       "redirectUris": ["https://notes.localhost:8443/auth/oauth2/callback"],
       "webOrigins": ["https://notes.localhost:8443"]
+    },
+    {
+      "clientId": "nextcloud-client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "changeme-nextcloud-oidc-secret",
+      "redirectUris": ["https://nextcloud.localhost:8443/apps/user_oidc/code"],
+      "webOrigins": ["https://nextcloud.localhost:8443"]
     }
   ],
   "users": [

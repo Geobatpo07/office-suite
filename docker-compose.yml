@@ -29,11 +29,12 @@ services:
       office_net:
         # Permet aux conteneurs de resoudre les domaines publics
         # entre eux (Nextcloud -> OnlyOffice, HedgeDoc -> Keycloak).
+        # auth.test (pas auth.localhost) : voir la note sur Keycloak plus bas.
         aliases:
           - nextcloud.localhost
           - office.localhost
           - notes.localhost
-          - auth.localhost
+          - auth.test
 
   # ================================
   # PostgreSQL for Nextcloud
@@ -61,6 +62,18 @@ services:
   nextcloud:
     image: nextcloud:29-apache
     restart: unless-stopped
+    # Trusts the local CA on every start, before Nextcloud's own entrypoint
+    # runs. Needed so PHP/curl accepts https://auth.test:8443 (SSO
+    # Keycloak) - the image's `before-starting` hook phase looked like the
+    # natural place for this, but it runs as root only on a container's
+    # very first boot; on every later restart of an already-installed
+    # instance it runs as www-data, which can't write the system trust
+    # store. This wrapper always runs as root (the image's default user),
+    # before entrypoint.sh gets a chance to drop privileges.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - update-ca-certificates && exec /entrypoint.sh apache2-foreground
     depends_on:
       nextcloud-db:
         condition: service_healthy
@@ -71,10 +84,12 @@ services:
       POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
-      # Lu par nextcloud/hooks/post-installation/onlyoffice.sh pour
-      # configurer automatiquement le connecteur ONLYOFFICE au premier
-      # demarrage (doit rester identique au JWT_SECRET du service onlyoffice).
+      # Lus par nextcloud/hooks/post-installation/*.sh pour configurer
+      # automatiquement OnlyOffice et le SSO Keycloak au premier demarrage.
       JWT_SECRET: ${JWT_SECRET}
+      # Doit correspondre au secret du client "nextcloud-client" defini
+      # dans keycloak/realm-office.json (importe automatiquement).
+      NEXTCLOUD_OIDC_SECRET: ${NEXTCLOUD_OIDC_SECRET}
       # Le port fait partie du domaine de confiance : sans lui,
       # Nextcloud repond "Access through untrusted domain".
       NEXTCLOUD_TRUSTED_DOMAINS: "nextcloud.localhost nextcloud.localhost:8443 localhost"
@@ -87,6 +102,8 @@ services:
     volumes:
       - nextcloud_data:/var/www/html
       - ./nextcloud/hooks/post-installation:/docker-entrypoint-hooks.d/post-installation:ro
+      # Installe par le custom `entrypoint:` ci-dessus, a chaque demarrage.
+      - ./traefik/certs/ca.crt:/usr/local/share/ca-certificates/office-suite-ca.crt:ro
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.localhost`)"
@@ -172,15 +189,15 @@ services:
       CMD_OAUTH2_CLIENT_SECRET: ${HEDGEDOC_OAUTH_SECRET}
       # Realm dedie "office", pas "master" : master est reserve a
       # l'administration de Keycloak lui-meme, pas aux clients applicatifs.
-      CMD_OAUTH2_AUTHORIZATION_URL: https://auth.localhost:8443/realms/office/protocol/openid-connect/auth
-      CMD_OAUTH2_TOKEN_URL: https://auth.localhost:8443/realms/office/protocol/openid-connect/token
-      CMD_OAUTH2_USER_PROFILE_URL: https://auth.localhost:8443/realms/office/protocol/openid-connect/userinfo
+      CMD_OAUTH2_AUTHORIZATION_URL: https://auth.test:8443/realms/office/protocol/openid-connect/auth
+      CMD_OAUTH2_TOKEN_URL: https://auth.test:8443/realms/office/protocol/openid-connect/token
+      CMD_OAUTH2_USER_PROFILE_URL: https://auth.test:8443/realms/office/protocol/openid-connect/userinfo
       CMD_OAUTH2_USER_PROFILE_USERNAME_ATTR: preferred_username
       CMD_OAUTH2_USER_PROFILE_DISPLAY_NAME_ATTR: name
       CMD_OAUTH2_USER_PROFILE_EMAIL_ATTR: email
       CMD_OAUTH2_SCOPE: "openid email profile"
       # Les appels OAuth token/userinfo sont faits cote serveur : Node
-      # doit faire confiance a la CA locale qui signe auth.localhost.
+      # doit faire confiance a la CA locale qui signe auth.test.
       NODE_EXTRA_CA_CERTS: /certs/ca.crt
     volumes:
       - hedgedoc_uploads:/hedgedoc/public/uploads
@@ -212,7 +229,14 @@ services:
       # Keycloak emet de mauvaises URLs de redirection.
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
-      KC_HOSTNAME: https://auth.localhost:8443
+      # Volontairement HORS *.localhost, contrairement aux 3 autres domaines :
+      # curl/libcurl (donc PHP/Nextcloud) resout tout *.localhost en 127.0.0.1
+      # en dur (RFC 6761), meme avec un /etc/hosts explicite ou un DNS Docker
+      # correct - ca casse les appels serveur a serveur de user_oidc
+      # (discovery/token/userinfo). .test (RFC 2606) n'a pas ce probleme et
+      # n'est pas auto-resolu par les navigateurs : voir le README pour
+      # l'entree /etc/hosts obligatoire sur ce domaine precis.
+      KC_HOSTNAME: https://auth.test:8443
       KC_HOSTNAME_STRICT: "false"
     volumes:
       # start-dev utilise une base H2 locale : sans volume, tous les
@@ -221,7 +245,7 @@ services:
       - ./keycloak/realm-office.json:/opt/keycloak/data/import/realm-office.json:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.keycloak.rule=Host(`auth.localhost`)"
+      - "traefik.http.routers.keycloak.rule=Host(`auth.test`)"
       - "traefik.http.routers.keycloak.entrypoints=websecure"
       - "traefik.http.routers.keycloak.tls=true"
       # L'image expose 8080, 8443 et 9000 : label obligatoire.
